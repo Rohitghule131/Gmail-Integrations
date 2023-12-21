@@ -1,11 +1,23 @@
+import base64
 import requests
 from os import getenv
 from django.shortcuts import redirect
 from rest_framework.response import Response
-from rest_framework.generics import RetrieveAPIView
+from rest_framework.generics import (
+    CreateAPIView,
+    RetrieveAPIView
+)
 
-from Utilities.constant import SCOPES
+from Utilities.constant import (
+    SCOPES,
+    GOOGLE_AUTH_URL,
+    GOOGLE_USER_INFO_URL,
+    GOOGLE_AUTH_TOKEN_URL,
+    GOOGLE_REVOKE_TOKEN_URL,
+    GMAIL_WATCH_REQUEST_URL,
+)
 from .models import GoogleRequestModel
+from .serializers import GmailWatchSerializer
 
 
 class GoogleOAuth2LoginAPIView(RetrieveAPIView):
@@ -14,6 +26,7 @@ class GoogleOAuth2LoginAPIView(RetrieveAPIView):
     """
     permission_classes = ()
     authentication_classes = ()
+    throttle_classes = ()
 
     def get(self, request, *args, **kwargs):
         """
@@ -24,24 +37,33 @@ class GoogleOAuth2LoginAPIView(RetrieveAPIView):
         redirect_uri = getenv("GOOGLE_REDIRECT_URI")
 
         if 'code' not in request.GET:
-            auth_uri = ('https://accounts.google.com/o/oauth2/v2/auth?response_type=code'
-                        '&client_id={}&redirect_uri={}&scope={}').format(client_id, redirect_uri, SCOPES)
+            auth_uri = GOOGLE_AUTH_URL.format(client_id, redirect_uri, SCOPES)
             return redirect(auth_uri)
         else:
             auth_code = request.GET['code']
-            data = {'code': auth_code,
-                    'client_id': client_id,
-                    'client_secret': client_secrete,
-                    'redirect_uri': redirect_uri,
-                    'grant_type': 'authorization_code',
-                    }
-            r = requests.post('https://oauth2.googleapis.com/token', data=data)
-            request.session['credentials'] = r.text
-            access_token_response = r.json()
+            data = {
+                'code': auth_code,
+                'client_id': client_id,
+                'client_secret': client_secrete,
+                'redirect_uri': redirect_uri,
+                'grant_type': 'authorization_code',
+            }
+            response = requests.post(GOOGLE_AUTH_TOKEN_URL, data=data)
+            request.session['credentials'] = response.text
+            access_token_response = response.json()
 
             headers = {'Authorization': f'Bearer {access_token_response["access_token"]}'}
-            personal_info_response = requests.get('https://www.googleapis.com/oauth2/v1/userinfo', headers=headers)
+            personal_info_response = requests.get(GOOGLE_USER_INFO_URL, headers=headers)
             personal_info_response = personal_info_response.json()
+
+            watch_request_url = GMAIL_WATCH_REQUEST_URL.format(personal_info_response["email"])
+
+            watch_request_data = {
+                'labelIds': ['INBOX'],
+                'topicName': getenv('PUB_SUB_TOPIC'),
+                'labelFilterBehavior': 'INCLUDE'
+            }
+            requests.post(watch_request_url, headers=headers, data=watch_request_data)
 
             GoogleRequestModel.objects.create(
                 email=personal_info_response["email"],
@@ -61,13 +83,13 @@ class RevokeGoogleAccessTokenAPIView(RetrieveAPIView):
 
     def get(self, request, *args, **kwargs):
         """
-        GET function revoke the google access token.
+        GET function revoke the Google access token.
         """
         email = request.GET.get("email", None)
         if email:
             google_info = GoogleRequestModel.objects.filter(email=email).last()
             if google_info:
-                revoke_url = 'https://accounts.google.com/o/oauth2/revoke'
+                revoke_url = GOOGLE_REVOKE_TOKEN_URL
 
                 # Construct the token revocation request
                 revoke_params = {
@@ -84,3 +106,24 @@ class RevokeGoogleAccessTokenAPIView(RetrieveAPIView):
         else:
             return Response({"message": "email address is required!"})
 
+
+class GmailWatchAPIView(CreateAPIView):
+    """
+    Class for creation a gmail watch api.
+    """
+    permission_classes = ()
+    authentication_classes = ()
+    serializer_class = GmailWatchSerializer
+    throttle_classes = ()
+
+    def post(self, request, *args, **kwargs):
+        """
+        POST method used for gmail watch.
+        """
+        data = request.data.get("message")
+        encoded_data = data.get("data")
+
+        decoded_data = base64.b64decode(encoded_data).decode("utf-8")
+        print("DECODED <><><><>", decoded_data)
+
+        return Response({"SUCCESS": "SUCCESS"})
