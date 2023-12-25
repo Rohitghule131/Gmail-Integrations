@@ -8,4 +8,4 @@ GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth?response_type=co
 
 # Gmail services urls.
 GMAIL_WATCH_REQUEST_URL = 'https://gmail.googleapis.com/gmail/v1/users/{}/watch'
-
+GMAIL_STOP_REQUEST_URL = 'https://gmail.googleapis.com/gmail/v1/users/{}/stop'

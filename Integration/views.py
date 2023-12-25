@@ -13,6 +13,7 @@ from Utilities.constant import (
     GOOGLE_AUTH_URL,
     GOOGLE_USER_INFO_URL,
     GOOGLE_AUTH_TOKEN_URL,
+    GMAIL_STOP_REQUEST_URL,
     GOOGLE_REVOKE_TOKEN_URL,
     GMAIL_WATCH_REQUEST_URL,
 )
@@ -89,6 +90,13 @@ class RevokeGoogleAccessTokenAPIView(RetrieveAPIView):
         if email:
             google_info = GoogleRequestModel.objects.filter(email=email).last()
             if google_info:
+
+                headers = {
+                    'Authorization': f'Bearer {google_info.access_token}'
+                }
+
+                stop_request_response = requests.post(GMAIL_STOP_REQUEST_URL.format(email), headers=headers)
+
                 revoke_url = GOOGLE_REVOKE_TOKEN_URL
 
                 # Construct the token revocation request
@@ -98,8 +106,9 @@ class RevokeGoogleAccessTokenAPIView(RetrieveAPIView):
 
                 response = requests.post(revoke_url, params=revoke_params)
 
-                if response.status_code == 200:
-                    return Response({"message": "Access token revoked successfully."})
+                if response.status_code == 200 and stop_request_response.status_code == 204:
+                    google_info.delete()
+                    return Response({"message": "Access token revoked and watch request stopped successfully."})
                 else:
                     return Response({"message": "Failed to revoke the access token."})
 
