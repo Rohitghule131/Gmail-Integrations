@@ -81,6 +81,7 @@ class RevokeGoogleAccessTokenAPIView(RetrieveAPIView):
     """
     permission_classes = ()
     authentication_classes = ()
+    throttle_classes = ()
 
     def get(self, request, *args, **kwargs):
         """
